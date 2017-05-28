@@ -943,17 +943,12 @@ bool loadParallax (unsigned short v, unsigned short fracX, unsigned short fracY)
 extern int viewportOffsetX, viewportOffsetY;
 
 
-bool loadHSI (FILE * fp, int x, int y, bool reserve) {
+bool loadImage(GLubyte *loadhere, int &picWidth, int &picHeight, int &realPicWidth, int &realPicHeight, FILE *fp, int x, int y, bool reserve) {
 
+	int32_t transCol = reserve ? -1 : 63519;
 	int t1, t2, n;
 	unsigned short c;
-	GLubyte * target;
-	int32_t transCol = reserve ? -1 : 63519;
-	int picWidth;
-	int picHeight;
-	int realPicWidth, realPicHeight;
-	long file_pointer = ftell (fp);
-
+	long file_pointer = ftell(fp);
 	png_structp png_ptr;
 	png_infop info_ptr, end_info;
 
@@ -1016,21 +1011,10 @@ bool loadHSI (FILE * fp, int x, int y, bool reserve) {
 		png_get_IHDR(png_ptr, info_ptr, &width, &height, &bit_depth, &color_type, &interlace_type, &compression_type, &filter_method);
 
 		//int rowbytes = png_get_rowbytes(png_ptr, info_ptr);
-
-	}
-
-
-	GLfloat texCoordW = 1.0;
-	GLfloat texCoordH = 1.0;
-	if (! NPOT_textures) {
-		picWidth = getNextPOT(picWidth);
-		picHeight = getNextPOT(picHeight);
-		texCoordW = ((double)realPicWidth) / picWidth;
-		texCoordH = ((double)realPicHeight) / picHeight;
 	}
 
 	if (reserve) {
-		if (! resizeBackdrop (realPicWidth, realPicHeight)) return false;
+		if (! resizeBackdrop(realPicWidth, realPicHeight)) return false;
 	}
 
 	if (x == IN_THE_CENTRE) x = (sceneWidth - realPicWidth) >> 1;
@@ -1038,9 +1022,9 @@ bool loadHSI (FILE * fp, int x, int y, bool reserve) {
 	if (x < 0 || x + realPicWidth > sceneWidth || y < 0 || y + realPicHeight > sceneHeight) return false;
 
 	if (fileIsPNG) {
-		unsigned char * row_pointers[realPicHeight];
-		for (int i = 0; i<realPicHeight; i++)
-			row_pointers[i] = backdropTexture + 4*i*picWidth;
+		unsigned char *row_pointers[realPicHeight];
+		for (int i = 0; i < realPicHeight; i++)
+			row_pointers[i] = loadhere + 4 * i * picWidth;
 
 		png_read_image(png_ptr, (png_byte **) row_pointers);
 		png_read_end(png_ptr, NULL);
@@ -1049,50 +1033,59 @@ bool loadHSI (FILE * fp, int x, int y, bool reserve) {
 		for (t2 = 0; t2 < realPicHeight; t2 ++) {
 			t1 = 0;
 			while (t1 < realPicWidth) {
-				c = (unsigned short) get2bytes (fp);
+				c = (unsigned short) get2bytes(fp);
 				if (c & 32) {
-					n = fgetc (fp) + 1;
+					n = fgetc(fp) + 1;
 					c -= 32;
 				} else {
 					n = 1;
 				}
 				while (n --) {
-					target = backdropTexture + 4*picWidth*t2 + t1*4;
+					GLubyte *target = loadhere + 4 * picWidth * t2 + t1 * 4;
 					if (c == transCol || c == 2015) {
-						target[0] = (GLubyte) 0;
-						target[1] = (GLubyte) 0;
-						target[2] = (GLubyte) 0;
-						target[3] = (GLubyte) 0;
+						target[0] = (GLubyte)0;
+						target[1] = (GLubyte)0;
+						target[2] = (GLubyte)0;
+						target[3] = (GLubyte)0;
 					} else {
-						target[0] = (GLubyte) redValue(c);
-						target[1] = (GLubyte) greenValue(c);
-						target[2] = (GLubyte) blueValue(c);
-						target[3] = (GLubyte) 255;
+						target[0] = (GLubyte)redValue(c);
+						target[1] = (GLubyte)greenValue(c);
+						target[2] = (GLubyte)blueValue(c);
+						target[3] = (GLubyte)255;
 					}
 					t1++;
 				}
 			}
 		}
 	}
+	return true;
+}
 
-	GLuint tmpTex;
-
-	glGenTextures (1, &tmpTex);
+void makeGlArray(GLuint &tmpTex, const GLubyte *texture, int picWidth, int picHeight) {
+	glGenTextures(1, &tmpTex);
 	glBindTexture(GL_TEXTURE_2D, tmpTex);
-	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	if (gameSettings.antiAlias < 0) {
-		glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	} else {
-		glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	}
-	texImage2D (GL_TEXTURE_2D, 0, GL_RGBA, picWidth, picHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, backdropTexture, tmpTex);
+	texImage2D(GL_TEXTURE_2D, 0, GL_RGBA, picWidth, picHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture, tmpTex);
 
+}
 
-	//glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-
+void renderToTexture(GLuint tmpTex, int x, int y, int picWidth, int picHeight, int realPicWidth, int realPicHeight) {
+	GLfloat texCoordW = 1.0;
+	GLfloat texCoordH = 1.0;
+	if (! NPOT_textures) {
+		picWidth = getNextPOT(picWidth);
+		picHeight = getNextPOT(picHeight);
+		texCoordW = ((double)realPicWidth) / picWidth;
+		texCoordH = ((double)realPicHeight) / picHeight;
+	}
 
 	float btx1;
 	float btx2;
@@ -1187,9 +1180,24 @@ bool loadHSI (FILE * fp, int x, int y, bool reserve) {
 
 		xoffset += viewportWidth;
 	}
-	deleteTextures(1, &tmpTex);
 
-	setPixelCoords (false);
+	setPixelCoords(false);
+}
+
+bool loadHSI(FILE *fp, int x, int y, bool reserve) {
+
+	int picWidth, picHeight;
+	int realPicWidth, realPicHeight;
+
+	if (!loadImage(backdropTexture, picWidth, picHeight, realPicWidth, realPicHeight, fp, x, y, reserve))
+		return false;
+
+	GLuint tmpTex;
+	makeGlArray(tmpTex, backdropTexture, picWidth, picHeight);
+
+	renderToTexture(tmpTex, x, y, picWidth, picHeight, realPicWidth, realPicHeight);
+
+	deleteTextures(1, &tmpTex);
 
 	backdropExists = true;
 	return true;
